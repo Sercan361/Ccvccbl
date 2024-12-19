@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kreditkartennummern, Ablaufdatum und CVV Prüfen</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(to bottom right, #4A90E2, #145DA0);
+            color: #fff;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        h2 {
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2em;
+        }
+        p {
+            text-align: center;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+        textarea {
+            width: 100%;
+            max-width: 600px;
+            padding: 10px;
+            border-radius: 5px;
+            border: none;
+            margin-bottom: 20px;
+            resize: none;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 1em;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background-color: #FF5733;
+            color: #fff;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #C13C17;
+        }
+        #results {
+            width: 100%;
+            max-width: 600px;
+            margin-top: 20px;
+        }
+        .result {
+            background: rgba(255, 255, 255, 0.1);
+            margin-bottom: 10px;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .valid {
+            color: #4CAF50;
+        }
+        .invalid {
+            color: #F44336;
+        }
+        .info {
+            color: #FFD700;
+        }
+    </style>
+</head>
+<body>
+    <h2>Kreditkartennummern Prüfen & BIN Informationen</h2>
+    <p>Es wird mit dem Luhn-Algorithmus geprüft, ob die Kartennummer ein richtiges Format hat. Zusätzlich werden Ablaufdatum, CVV und die BIN-Informationen geprüft.<br>
+    <strong>Das bedeutet nicht, dass die Karte gültig ist.
+    Die CVV kann nur die Bank Prüfen.</strong></p>
+    <p>Gib die Daten im Format <strong>000000000|MM|JJ|CVV</strong> oder nur die BIN <strong>000000</strong> ein:</p>
+
+    <!-- Eingabefeld -->
+    <textarea id="cardInput" rows="6" cols="50" placeholder="4539148803436467|12|25|123 oder 457173"></textarea>
+
+    <!-- Prüfen Button -->
+    <button onclick="validateCards()">Prüfen</button>
+
+    <!-- Ergebnisbereich -->
+    <h3>Ergebnisse:</h3>
+    <div id="results"></div>
+
+    <script>
+        // Luhn-Algorithmus zur Validierung der Kreditkartennummer
+        function luhnCheck(cardNumber) {
+            const digits = cardNumber.split('').reverse().map(Number);
+            for (let i = 1; i < digits.length; i += 2) {
+                digits[i] *= 2;
+                if (digits[i] > 9) digits[i] -= 9;
+            }
+            const totalSum = digits.reduce((sum, digit) => sum + digit, 0);
+            return totalSum % 10 === 0;
+        }
+
+        // Prüfen, ob das Ablaufdatum gültig ist
+        function isDateValid(month, year) {
+            const now = new Date();
+            const currentMonth = now.getMonth() + 1;
+            const currentYear = now.getFullYear() % 100;
+            return month >= 1 && month <= 12 && (year > currentYear || (year === currentYear && month >= currentMonth));
+        }
+
+        // CVV prüfen (3 oder 4 Ziffern)
+        function isCvvValid(cvv) {
+            return /^\d{3,4}$/.test(cvv);
+        }
+
+        // BIN-Informationen von Binlist abrufen
+        async function getBinInfo(bin) {
+            const apiUrl = `https://lookup.binlist.net/${bin}`;
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) throw new Error("Keine BIN-Daten gefunden.");
+                const data = await response.json();
+                return {
+                    bank: data.bank ? data.bank.name : "Unbekannt",
+                    brand: data.scheme || "Unbekannt",
+                    type: data.type || "Unbekannt",
+                    country: data.country ? data.country.name : "Unbekannt"
+                };
+            } catch (error) {
+                return { bank: "Unbekannt", brand: "Unbekannt", type: "Unbekannt", country: "Unbekannt" };
+            }
+        }
+
+        // Hauptfunktion zur Validierung der Eingaben
+        async function validateCards() {
+            const input = document.getElementById("cardInput").value.trim();
+            const resultsDiv = document.getElementById("results");
+            resultsDiv.innerHTML = "";
+
+            const lines = input.split(/\n/).filter(line => line.trim() !== "");
+
+            for (const line of lines) {
+                const parts = line.split('|').map(p => p.trim());
+
+                // Wenn nur eine BIN eingegeben wurde
+                if (parts.length === 1 && parts[0].length === 6) {
+                    const bin = parts[0];
+                    const binInfo = await getBinInfo(bin);
+                    resultsDiv.innerHTML += `<div class="result">
+                        BIN: <strong>${bin}</strong><br>
+                        <span class="info">BIN Info: ${binInfo.brand} | ${binInfo.type} | ${binInfo.bank} | ${binInfo.country}</span>
+                    </div>`;
+                    continue;
+                }
+
+                // Prüfen, ob das vollständige Format eingegeben wurde
+                if (parts.length !== 4) {
+                    resultsDiv.innerHTML += `<div class="result invalid">Ungültiges Format: ${line}</div>`;
+                    continue;
+                }
+
+                const cardNumber = parts[0];
+                const month = parseInt(parts[1], 10);
+                const year = parseInt(parts[2], 10);
+                const cvv = parts[3];
+                const bin = cardNumber.slice(0, 6);
+
+                let result = `<div class="result">`;
+
+                // Luhn-Check
+                const isValidCard = luhnCheck(cardNumber);
+                result += `Kreditkartennummer: <strong>${cardNumber}</strong> → `;
+                result += isValidCard ? `<span class="valid">gültig</span>` : `<span class="invalid">ungültig</span>`;
+
+                // Ablaufdatum prüfen
+                result += ` | Ablaufdatum: ${month}/${year} → `;
+                result += isDateValid(month, year) ? `<span class="valid">gültig</span>` : `<span class="invalid">ungültig</span>`;
+
+                // CVV prüfen
+                result += ` | CVV: ${cvv} → `;
+                result += isCvvValid(cvv) ? `<span class="valid">gültig</span>` : `<span class="invalid">ungültig</span>`;
+
+                // BIN-Informationen abrufen
+                const binInfo = await getBinInfo(bin);
+                result += `<br><span class="info">BIN Info: ${binInfo.brand} | ${binInfo.type} | ${binInfo.bank} | ${binInfo.country}</span>`;
+
+                result += `</div>`;
+                resultsDiv.innerHTML += result;
+            }
+        }
+    </script>
+</body>
+</html>
